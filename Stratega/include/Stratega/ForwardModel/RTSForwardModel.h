@@ -57,17 +57,14 @@ namespace  SGA
 	class RTSForwardModel : public EntityForwardModel
 	{
 	public:
-		float deltaTime;
-		
-		RTSForwardModel()
-			: deltaTime(1. / 60.)
-		{
-		}
+		void advanceGameState(GameState& state, const RTSAction& action) const override;
 
-		void advanceGameState(GameState& state, const RTSAction& action) const;
+		std::vector<Action> generateActions(GameState& state) const override;
+		std::vector<Action> generateActions(GameState& state, int playerID) const override;
 
-		std::vector<Action> generateActions(GameState& state) const;
-		std::vector<Action> generateActions(GameState& state, int playerID) const;
+		bool checkGameIsFinished(GameState& state) const override;
+
+		bool isValid(const GameState& state, const Action& action) const;
 
 		void moveEntities(GameState& state) const;
 		void resolveEntityCollisions(GameState& state) const;
@@ -75,7 +72,5 @@ namespace  SGA
 
 		bool buildNavMesh(GameState& state, NavigationConfig config) const;
 		Path findPath(const GameState& state, Vector2f startPos, Vector2f endPos) const;
-
-		bool checkGameIsFinished(GameState& state) const;
 	};
 }

@@ -2,6 +2,16 @@
 
 namespace SGA
 {
+	void EntityForwardModel::advanceGameState(GameState& state, const Action& action) const
+	{
+		
+	}
+
+	void EntityForwardModel::advanceGameState(GameState& state, const RTSAction& action) const
+	{
+		
+	}
+	
 	bool EntityForwardModel::canPlayerPlay(const GameState& state, Player& player) const
 	{
 		if (state.fogOfWarId != -1 && player.id != state.fogOfWarId)
@@ -345,8 +355,7 @@ namespace SGA
 				}				
 
 			}
-		}
-	
+		}	
 
 	void EntityForwardModel::spawnEntity(GameState& state, const EntityType& entityType, int playerID, const Vector2f& position) const
 	{
