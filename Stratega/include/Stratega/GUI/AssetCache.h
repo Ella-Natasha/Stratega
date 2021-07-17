@@ -12,6 +12,8 @@ public:
 	//assets/textures/
 	void loadTexture(std::string name, std::string fileName);
 	void loadFont(std::string name, std::string fileName);
+	void saveTexture(std::string name, sf::Texture texture);
+	void updateTexture(std::string name, sf::Texture texture);
 	
 	sf::Texture& getTexture(std::string name);
 	sf::Font& getFont(std::string name);

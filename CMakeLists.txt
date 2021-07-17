@@ -23,6 +23,7 @@ add_subdirectory("dependencies")
 add_subdirectory("Stratega")
 add_subdirectory("GUI")
 add_subdirectory("Arena")
+add_subdirectory("MapBuilder")
 
 if(STRATEGA_BUILD_DOCS)
     add_subdirectory("docs")

@@ -15,6 +15,14 @@ void AssetCache::loadTexture(std::string name, std::string fileName) {
 	}
 }
 
+void AssetCache::saveTexture(std::string name, sf::Texture texture) {
+	this->textures.emplace(name, texture);
+}
+
+void AssetCache::updateTexture(std::string name, sf::Texture texture) {
+    this->textures.at(name) = texture;
+}
+
 void AssetCache::loadFont(std::string name, std::string fileName) {
 	sf::Font font;
 
