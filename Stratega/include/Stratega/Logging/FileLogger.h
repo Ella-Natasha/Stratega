@@ -51,7 +51,7 @@ namespace SGA
 				}
 				return curNode[lastToken];
 			}
-			else
+            else
 			{
 				// This is not the last token, so it tells us where the value goes in the hierarchy
 				auto token = key.substr(keyPos, newPos - keyPos);

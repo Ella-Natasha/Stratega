@@ -3,6 +3,7 @@
 #include <Stratega/Configuration/RenderConfig.h>
 #include <Stratega/Configuration/GameConfig.h>
 #include <Stratega/Representation/GameState.h>
+#include <Stratega/MapGUI/MapState.h>
 
 namespace SGA
 {
@@ -20,6 +21,8 @@ namespace SGA
                 miniTileSpritePaths.emplace(gameConfig.getTileID(namePathPair.first), miniPath);
             }
         }
+        minifilePaths.emplace_back("../MapBuilder/Assets/entity.png");
+        miniTileSpritePaths.emplace(-2, "../MapBuilder/Assets/entity.png");
         miniTileset.init(minifilePaths);
 
         // resize the vertex array to fit the level size
@@ -41,7 +44,7 @@ namespace SGA
                 const auto& tile = board[{x, y}];
                 int entityOwnerID = -2;
 
-                for(size_t i = 0; i < entities.size(); i++)
+                for(int i = 0; i < static_cast<int>(entities.size()); i++)
                 {
                     const auto& entity = entities.at(i);
                     if (entity.position == Vector2f((double)x, (double)y))
@@ -72,14 +75,16 @@ namespace SGA
         quadPtr[3].position = sf::Vector2f(start.x, start.y + tileSize.y);
 
         // define the 4 texture coordinates
+        sf::Rect<float> rect;
         if(entityOwnerID == -2)
-        {
-            auto rect = miniTileset.getSpriteRect(miniTileSpritePaths.at(tile.tileTypeID));
-            quadPtr[0].texCoords = sf::Vector2f(rect.left, rect.top);
-            quadPtr[1].texCoords = sf::Vector2f(rect.left + rect.width, rect.top);
-            quadPtr[2].texCoords = sf::Vector2f(rect.left + rect.width, rect.top + rect.height);
-            quadPtr[3].texCoords = sf::Vector2f(rect.left, rect.top + rect.height);
-        }
+            rect = miniTileset.getSpriteRect(miniTileSpritePaths.at(tile.tileTypeID));
+        else
+            rect = miniTileset.getSpriteRect(miniTileSpritePaths.at(-2));
+
+        quadPtr[0].texCoords = sf::Vector2f(rect.left, rect.top);
+        quadPtr[1].texCoords = sf::Vector2f(rect.left + rect.width, rect.top);
+        quadPtr[2].texCoords = sf::Vector2f(rect.left + rect.width, rect.top + rect.height);
+        quadPtr[3].texCoords = sf::Vector2f(rect.left, rect.top + rect.height);
 
         // define the 4 colors
         quadPtr[0].color = quadColor;

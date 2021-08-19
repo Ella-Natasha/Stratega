@@ -20,7 +20,10 @@ void AssetCache::saveTexture(std::string name, sf::Texture texture) {
 }
 
 void AssetCache::updateTexture(std::string name, sf::Texture texture) {
-    this->textures.at(name) = texture;
+    if (textures.contains(name))
+        this->textures.at(name) = texture;
+    else
+        this->saveTexture(name, texture);
 }
 
 void AssetCache::loadFont(std::string name, std::string fileName) {

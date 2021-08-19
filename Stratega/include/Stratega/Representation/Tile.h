@@ -8,6 +8,7 @@ namespace SGA
 			tileTypeID(typeID),
 			isWalkable(true),
 			blocksSight(false),
+			locked(false),
 			position(x, y)
 		{
 
@@ -16,6 +17,7 @@ namespace SGA
 		int tileTypeID;
 		bool isWalkable;
 		bool blocksSight;
+		bool locked;
 		Vector2i position;
 	};
 

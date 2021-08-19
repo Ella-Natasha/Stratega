@@ -1,4 +1,5 @@
 #pragma once
+#include <list>
 #include <Stratega/Agent/Agent.h>
 #include <Stratega/Agent/TreeSearchAgents/TreeNode.h>
 #include <Stratega/Agent/AgentParameters.h>

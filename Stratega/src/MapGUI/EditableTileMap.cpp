@@ -26,13 +26,12 @@ namespace SGA
     void EditableTileMap::update(const GameState& state)
     {
         const auto& board = state.board;
-//        const auto& fowBoard = fowState.board;
         m_vertices.resize(board.getWidth() * board.getHeight() * 4);
 
         // populate the vertex array, with one quad per tile
-        for (int x = 0; x < board.getWidth(); ++x)
+        for (int x = 0; x < (int)board.getWidth(); ++x)
         {
-            for (int y = 0; y < board.getHeight(); ++y)
+            for (int y = 0; y < (int)board.getHeight(); ++y)
             {
                 // get the current tile
                 const auto& tile = board[{x, y}];
@@ -45,14 +44,15 @@ namespace SGA
         }
     }
 
-    void EditableTileMap::update(const Grid2D<Tile>& board)
+    void EditableTileMap::update(MapState* state, bool renderOverlay, OverlayRenderType viewType, int explorationPlayerID)
     {
+        auto board = state->board;
         m_vertices.resize(board.getWidth() * board.getHeight() * 4);
 
         // populate the vertex array, with one quad per tile
-        for (int x = 0; x < board.getWidth(); ++x)
+        for (int x = 0; x < (int)board.getWidth(); ++x)
         {
-            for (int y = 0; y < board.getHeight(); ++y)
+            for (int y = 0; y < (int)board.getHeight(); ++y)
             {
                 // get the current tile
                 const auto& tile = board[{x, y}];
@@ -61,6 +61,43 @@ namespace SGA
                 sf::Vertex* quad = &m_vertices[(x + y * board.getWidth()) * 4];
                 updateTileQuad(quad, tile, sf::Color::White);
 
+                if(!renderOverlay)
+                {
+                    updateTileQuad(quad, tile, sf::Color::White);
+                }
+                else if(viewType == OverlayRenderType::Exploration)
+                {
+                    bool explored = false;
+                    if(explorationPlayerID != -1)
+                    {
+                        auto& crossed = state->playerExploration.at(explorationPlayerID).at("tilesCrossed");
+                        for (auto& crossedTile : crossed)
+                        {
+                            if(crossedTile.x == x && crossedTile.y == y)
+                            {
+                                explored = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    updateTileQuad(quad, tile, explored ? ENTITY_COLORS[explorationPlayerID] : sf::Color::White);
+                }
+                else if(viewType == OverlayRenderType::SafeAreas)
+                {
+                    auto& safeTiles = state->playerSafeAreas;
+                    bool isSafe = false;
+                    int playerID;
+                    for (int i = 0; i < static_cast<int>(safeTiles.size()); ++i)
+                    {
+                        if (safeTiles.contains(Vector2i(x, y)) && safeTiles.at(Vector2i(x, y)) != -1)
+                        {
+                            playerID = safeTiles.at(Vector2i(x, y));
+                            isSafe = true;
+                        }
+                    }
+                    updateTileQuad(quad, tile, isSafe ? ENTITY_COLORS[playerID] : sf::Color::White);
+                }
             }
         }
     }

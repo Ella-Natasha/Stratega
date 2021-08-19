@@ -23,7 +23,7 @@ namespace SGA
     {
         fowSettings.selectedPlayerID = pointOfViewPlayerID;
         fowSettings.renderFogOfWar = true;
-        fowSettings.renderType = FogRenderType::Fog;
+//        fowSettings.renderType = FogRenderType::Fog;
 
         // Initialize View
         sf::View view = window.getView();
@@ -102,7 +102,7 @@ namespace SGA
 
     void NewMapRenderer::renderLayers()
     {
-        tileMap.update(state);
+//        tileMap.update(state);
         window.draw(tileMap);
 
         //Add selected tileactionSettings.waitingForPosition

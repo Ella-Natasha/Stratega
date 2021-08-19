@@ -627,7 +627,7 @@ namespace SGA
         config.renderConfig = std::make_unique<RenderConfig>();
 
         // Hardcode shader Path
-        config.renderConfig->outlineShaderPath = "./GUI/Assets/OutLine.frag";
+        config.renderConfig->outlineShaderPath = "../GUI/Assets/OutLine.frag";
 
         for (const auto& entityNode : configNode["Entities"])
         {
@@ -637,7 +637,7 @@ namespace SGA
         }
 
         //Add Fog of War tile
-        config.renderConfig->tileSpritePaths.emplace("FogOfWar", "./GUI/Assets/Tiles/notVisible.png");
+        config.renderConfig->tileSpritePaths.emplace("FogOfWar", "../GUI/Assets/Tiles/notVisible.png");
 
         for (const auto& tileNode : configNode["Tiles"])
         {

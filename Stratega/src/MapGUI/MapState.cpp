@@ -1,5 +1,6 @@
 #include <Stratega/MapGUI/MapState.h>
 #include <Stratega/Representation/Vector2.h>
+#include <Stratega/MapGUI/Utils/Algorithms/AStar.h>
 
 namespace SGA
 {
@@ -53,6 +54,12 @@ namespace SGA
         return instance.id;
     }
 
+    void MapState::addTileLock(const Vector2f& position)
+    {
+        board[{(int)position.x, (int)position.y}].locked = true;
+        lockedTiles.emplace_back(position);
+    }
+
     Entity* MapState::getEntity(Vector2f pos)
     {
         for (auto& entity : entities)
@@ -95,6 +102,19 @@ namespace SGA
         return nullptr;
     }
 
+    bool MapState::tileLockAt(const Vector2f& pos) const
+    {
+        for(const auto& lock : lockedTiles)
+        {
+            if(static_cast<int>(pos.x) == static_cast<int>(lock.x) && static_cast<int>(pos.y) == static_cast<int>(lock.y))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     void MapState::removeEntityAt(const Vector2f& pos)
     {
         for (int i = 0; i < static_cast<int>(entities.size()); ++i)
@@ -106,6 +126,18 @@ namespace SGA
         }
         nextEntityID--;
         getOwnedEntities();
+    }
+
+    void MapState::removeTileLockAt(Vector2f pos)
+    {
+        board[{(int)pos.x, (int)pos.y}].locked = false;
+        for (int i = 0; i < static_cast<int>(lockedTiles.size()); ++i)
+        {
+            if(static_cast<int>(pos.x) == static_cast<int>(lockedTiles.at(i).x) && static_cast<int>(pos.y) == static_cast<int>(lockedTiles.at(i).y))
+            {
+                lockedTiles.erase(lockedTiles.begin() + i);
+            }
+        }
     }
 
     void MapState::clearAllEntities()
@@ -138,7 +170,7 @@ namespace SGA
             auto& pos = entity.position;
             const char symbol = config->entityTypes.at(entity.typeID).symbol;
             const char ownerID = std::to_string(entity.ownerID)[0];
-            const int entityMapIndex = (pos.y * board.getWidth() + pos.x) * 3 + pos.y;
+            const int entityMapIndex = (pos.y * (int)board.getWidth() + pos.x) * 3 + pos.y;
 
             map[entityMapIndex] = symbol;
 
@@ -154,22 +186,23 @@ namespace SGA
     void MapState::calcMetrics()
     {
         getOwnedEntities();
+        calcSymmetry();
 
         if(validateMap())
         {
-            calcSymmetry();
             calcEntityAllocationFairness();
+            calcExploration();
+            calcSafeArea();
 //            calcResourceSafety();
-//            calcResourceSafetyFairness();
-//            calcSafeArea();
-//            calcSafeAreaFairness();
-//            calcExploration();
-//            calcExplorationFairness();
+            calcEntityTotalFairness();
+
         }
         else
         {
-            asymmetricFitness = 0;
-            fitness = 0;
+            for(auto& stat : fitnessMapStats)
+                stat.second = 0;
+            for(auto& stat : entityMapStats)
+                stat.second = 0;
         }
     }
 
@@ -178,43 +211,210 @@ namespace SGA
 
     }
 
-    void MapState::calcResourceSafetyFairness()
-    {
-
-    }
-
     void MapState::calcSafeArea()
     {
+        playerSafeAreas.clear();
+        std::vector<TileSafetyInfo> playerSafeTiles;
+        for (auto& reachableTile : reachableWalkable)
+        {
+            auto tileSafety = TileSafetyInfo(reachableTile.x, reachableTile.y, -1);
+            int ownerID;
+            bool containsEntity = false;
+            int minDistToTile = 100;
+            std::map<int, std::vector<DistanceToTile>> distToPlayerEntities;
+            for (auto& player : playerOwnedEntities)
+            {
+                auto& playerID = player.first;
+                std::vector<DistanceToTile> distToEnts;
+                for (auto& ownedEntity : player.second)
+                {
+                    auto astar = AStar(board);
+                    astar.aStarSearch(Vector2i(ownedEntity.position.x, ownedEntity.position.y), reachableTile);
+//                    double distToTile = ownedEntity.position.chebyshevDistance(Vector2f(reachableTile.x, reachableTile.y));
+                    double distToTile = astar.pathLength;
+                    auto distanceToTile = DistanceToTile(ownedEntity.position.x, ownedEntity.position.y, distToTile);
+                    distToEnts.push_back(distanceToTile);
+                    if (distToTile < minDistToTile)
+                    {
+                        ownerID = player.first;
+                        minDistToTile = distToTile;
+                    }
+                    else if (distToTile == minDistToTile && ownerID != playerID)
+                        ownerID = -1;
 
+                    if (distToTile == 0 || std::count(neutralEntityPositions.begin(), neutralEntityPositions.end(), Vector2f(reachableTile.x, reachableTile.y)))
+                        containsEntity = true;
+                }
+                distToPlayerEntities.insert({playerID, distToEnts});
+            }
+
+            tileSafety.safeForPlayerID = ownerID;
+            tileSafety.containsEntity = containsEntity;
+            tileSafety.distToPlayerEntities = distToPlayerEntities;
+
+            if (ownerID != -1)
+            {
+                double distFromOwnerEnts = 0;
+                for(auto& distToEnt : distToPlayerEntities.at(ownerID))
+                {
+                    distFromOwnerEnts += distToEnt.distance;
+                }
+
+                double maxSafety = 0;
+                double distFromNonOwnerEnts = 0;
+                double min = 0;
+                for (auto& player : distToPlayerEntities)
+                {
+                    if (ownerID != player.first)
+                    {
+                        for(auto& distToEnt : player.second)
+                        {
+                            distFromNonOwnerEnts += distToEnt.distance;
+                        }
+                    }
+                }
+                double safety = (distFromNonOwnerEnts - distFromOwnerEnts) / (distFromNonOwnerEnts + distFromOwnerEnts);
+                if (safety > maxSafety)
+                    maxSafety = safety;
+
+                tileSafety.safteyValue = maxSafety;
+            }
+
+            playerSafeTiles.push_back(tileSafety);
+            if (ownerID != -1)
+                playerSafeAreas.insert({reachableTile, ownerID});
+        }
+
+        std::unordered_map<int, double> playerSafetyScores;
+        std::unordered_map<int, double> resourceSafetyScores;
+        for (auto& tile : playerSafeTiles)
+        {
+            if (tile.safeForPlayerID != -1)
+            {
+                if(playerSafetyScores.contains(tile.safeForPlayerID))
+                    playerSafetyScores.at(tile.safeForPlayerID) += tile.safteyValue;
+                else
+                    playerSafetyScores.insert({tile.safeForPlayerID, tile.safteyValue});
+
+                if (tile.containsEntity)
+                {
+                    if(resourceSafetyScores.contains(tile.safeForPlayerID))
+                        resourceSafetyScores.at(tile.safeForPlayerID) += tile.safteyValue;
+                    else
+                        resourceSafetyScores.insert({tile.safeForPlayerID, tile.safteyValue});
+                }
+            }
+        }
+
+        double maxSafteyScore = 0;
+        double minSafteyScore = 100;
+        double totalSafetyScore = 0;
+        for (auto& player : playerSafetyScores)
+        {
+            double playerSafetyScore = player.second;
+            if(playerSafetyScore > maxSafteyScore)
+                maxSafteyScore = playerSafetyScore;
+            if(playerSafetyScore < minSafteyScore)
+                minSafteyScore = playerSafetyScore;
+            totalSafetyScore += playerSafetyScore;
+        }
+
+        double maxResourceSafteyScore = 0;
+        double minResourceSafteyScore = 100;
+        double totalResourceSafetyScore = 0;
+        for (auto& player : resourceSafetyScores)
+        {
+            double resourceSafetyScore = player.second;
+            if(resourceSafetyScore > maxResourceSafteyScore)
+                maxResourceSafteyScore = resourceSafetyScore;
+            if(resourceSafetyScore < minResourceSafteyScore)
+                minResourceSafteyScore = resourceSafetyScore;
+            totalResourceSafetyScore += resourceSafetyScore;
+        }
+        entityMapStats.at("Safe Areas") = (totalSafetyScore/reachableWalkable.size()) * 100;
+        entityMapStats.at("Safe Area Fairness") = ((minSafteyScore * playerSafetyScores.size())/(maxSafteyScore * playerSafetyScores.size())) * 100;
+        entityMapStats.at("Resource Safety") = (totalResourceSafetyScore/entities.size()) * 100;
+        entityMapStats.at("Resource Safety Fairness") = ((minResourceSafteyScore * resourceSafetyScores.size())/(maxResourceSafteyScore * resourceSafetyScores.size())) * 100;
     }
 
-    void MapState::calcSafeAreaFairness()
+    void MapState::calcEntityTotalFairness()
     {
-
+        double total = 0;
+        total += entityMapStats.at("Safe Area Fairness");
+        total += entityMapStats.at("Exploration Fairness");
+        total += entityMapStats.at("Resource Safety Fairness");
+        fitnessMapStats.at("Overall Player Fairness") = total / 3;
     }
 
     void MapState::calcExploration()
     {
-        int numEntities = 0;
-        float ffSum = 0;
-        for (auto& ent : entities)
+        int numPlayers = playerOwnedEntities.size();
+        std::unordered_map<int, double> playerExplorationScores;
+        playerExploration.clear();
+
+        // get exploration from each owned entity to each other player owned entity
+        for (auto& player : playerOwnedEntities)
         {
-            if (ent.ownerID == 0)
+            std::set<Vector2i> allReachableTiles;
+            std::set<Vector2i> allReachableEntities;
+            int totalTilesCrossed = 0;
+            auto& playerID = player.first;
+            auto& ownedEntities = player.second;
+            for(auto& ownedEntity : ownedEntities)
             {
-                numEntities++;
-                auto& floodFillStart = entities[0].position;
-                auto reachable = floodFillMetricHelper(floodFillStart.x, floodFillStart.y);
+                // Loop through all entities
+                for (auto& entity : entities)
+                {
+                    // if not neutral or owned by the current player
+                    if(entity.ownerID != -1 && entity.ownerID != playerID)
+                    {
+                        auto floodFillEnd = entity.position;
+                        auto floodFillStart = ownedEntity.position;
+                        auto reachable = floodFillMetricHelper(floodFillStart, floodFillEnd);
+                        auto& tilesCrossed = reachable.at("reachableTiles");
+                        auto& entitiesMet = reachable.at("reachableEntities");
+                        totalTilesCrossed += tilesCrossed.size();
 
-                int coverage = reachable.at("reachableTiles").size();
-
+                        for(auto& tile : tilesCrossed)
+                        {
+                            allReachableTiles.insert(tile);
+                        }
+                        for(auto& ent : entitiesMet)
+                        {
+                            allReachableEntities.insert(ent);
+                        }
+                    }
+                }
             }
+            double avgPlayerExp = (double)totalTilesCrossed / playerOwnedEntities.at(playerID).size();
+            playerExplorationScores.insert({playerID, avgPlayerExp});
+            playerExploration.insert({playerID, {
+                {"tilesCrossed", allReachableTiles},
+                {"entitiesMet", allReachableEntities}
+            }});
         }
 
-    }
+        int totExploration = 0;
+        int maxExploration = 0;
+        for (auto& score : playerExplorationScores)
+        {
+            totExploration += score.second;
+            if(score.second > maxExploration)
+                maxExploration = score.second;
+        }
 
-    void MapState::calcExplorationFairness()
-    {
+        int totWalkable = 0;
+        for (auto& tile : board.grid)
+        {
+            if(tile.isWalkable)
+                totWalkable++;
+        }
 
+        double avgExploration = (double)totExploration/numPlayers;
+        int percentExploration = ((double)avgExploration/totWalkable) * 100;
+        int explorationFairness = (double)totExploration/(maxExploration * numPlayers) * 100;
+        entityMapStats.at("Exploration") = percentExploration;
+        entityMapStats.at("Exploration Fairness") = explorationFairness;
     }
 
     bool MapState::validateMap()
@@ -226,8 +426,10 @@ namespace SGA
         }
 
         auto& floodFillStart = entities[0].position;
-        auto reachable = floodFillMetricHelper(floodFillStart.x, floodFillStart.y);
+        Vector2f floodFillEnd = Vector2f(-1, -1);
+        auto reachable = floodFillMetricHelper(floodFillStart, floodFillEnd);
         auto reachableEntities = reachable.at("reachableEntities");
+        reachableWalkable = reachable.at("reachableTiles");
 
         if( reachableEntities.size() == entities.size())
         {
@@ -245,17 +447,6 @@ namespace SGA
 
     void MapState::calcSymmetry()
     {
-        // get number of walkable and impassable tiles
-        std::vector<Tile> walkable;
-        std::vector<Tile> impassable;
-        for (auto& tile : board.grid)
-        {
-            if (tile.isWalkable)
-                walkable.push_back(tile);
-            else
-                impassable.push_back(tile);
-        }
-
         int boardWidth = board.getWidth();
         int boardHeight = board.getHeight();
 
@@ -263,6 +454,11 @@ namespace SGA
         // (in terms of walkable or impassable tiles specific tile type does not matter)
         int midPointHorizontal = boardHeight / 2;
         int identicalOnHorizontal = 0;
+        // add center row tiles if height is odd
+        if (boardHeight%2 != 0)
+        {
+            identicalOnHorizontal += boardWidth;
+        }
 
         for (int x = 0; x < boardWidth; x++)
         {
@@ -281,6 +477,11 @@ namespace SGA
         // (in terms of walkable or impassable tiles specific tile type does not matter)
         int midPointVertical = boardWidth / 2;
         int identicalOnVertical = 0;
+        // add center row tiles if height is odd
+        if (boardWidth%2 != 0)
+        {
+            identicalOnVertical += boardHeight;
+        }
 
         for (int x = 0; x < midPointVertical; ++x)
         {
@@ -294,45 +495,66 @@ namespace SGA
             }
         }
 
-        //lead diagonal symmetry
-//        int minDist = std::min(boardHeight, boardWidth);
-        double k = boardWidth / boardHeight;
+        //leading diagonal symmetry
         int identicalOnLeadDiagonal = 0;
-
-        for (int x = 0; x < boardWidth; ++x)
+        for (int x = 0; x < boardHeight; x++)
         {
-            int middle = (int)(k * x);
-            for (int y = 0; y < middle; ++y) {
-                const auto& tile = board[{x, y}];
-                const auto& oppositeTile = board[{boardWidth - 1 - x, boardHeight - 1 - y}];
-                if (tile.isWalkable == oppositeTile.isWalkable)
-                    identicalOnLeadDiagonal += 2;
+            for (int y = x; y >= 0; y--)
+            {
+                if (y == x)
+                    identicalOnLeadDiagonal++;
+                else
+                {
+                    const auto& tile = board[{x, y}];
+                    const auto& oppositeTile = board[{y, x}];
+                    if (tile.isWalkable == oppositeTile.isWalkable)
+                        identicalOnLeadDiagonal += 2;
+                }
             }
         }
 
-        //opposite diagonal symmetry
-        int identicalOnOppositeDiagonal = 0;
-//        for (int x = 0; x < boardWidth; ++x)
-//        {
-//            int middle = (int)(k * x);
-//            for (int y = boardHeight -1; y < middle; --y) {
-//                const auto& tile = board[{x, y}];
-//                const auto& oppositeTile = board[{boardWidth - 1 - x, boardHeight - 1 - y}];
-//                if (tile.isWalkable == oppositeTile.isWalkable)
-//                    identicalOnLeadDiagonal += 2;
-//            }
-//        }
+        //antidiagonal symmetry
+        int identicalOnAntiDiagonal = 0;
+        int j = 0;
+        for (int x = boardWidth -1; x >= 0; x--)
+        {
+            int i = 1;
+            for (int y = j; y < boardHeight; y++)
+            {
+                if (y + x == boardWidth-1)
+                {
+                    identicalOnAntiDiagonal++;
+                }
+                else
+                {
+                    const auto& tile = board[{x, y}];
+                    const auto& oppositeTile = board[{x-i, y-i}];
+                    if (tile.isWalkable == oppositeTile.isWalkable)
+                        identicalOnAntiDiagonal += 2;
+                    i++;
+                }
+            }
+            j++;
+        }
 
         // get highest symmetry value
-        int totSymmetry = (identicalOnVertical + identicalOnHorizontal + identicalOnLeadDiagonal) / 3;
-        asymmetricFitness = 1 - ((double)totSymmetry / (double)(board.getHeight()*board.getWidth()));
+        double avgSymmetry = (double)(identicalOnVertical + identicalOnHorizontal + identicalOnLeadDiagonal + identicalOnAntiDiagonal) / 4;
+        double totTiles = board.grid.size();
+        int percentSymmetry = (avgSymmetry / totTiles) * 100;
+        fitnessMapStats.at("Overall Symmetry") = percentSymmetry;
+        symmetryMapStats.at("Horizontal Symmetry") = (identicalOnHorizontal / totTiles) * 100;
+        symmetryMapStats.at("Vertical Symmetry") = (identicalOnVertical / totTiles) * 100;
+        symmetryMapStats.at("Leading Diagonal Symmetry") = (identicalOnLeadDiagonal / totTiles) * 100;
+        symmetryMapStats.at("Antidiagonal Symmetry") = (identicalOnAntiDiagonal / totTiles) * 100;
+//        asymmetricFitness = 100 - percentSymmetry;
     }
 
     void MapState::getOwnedEntities()
     {
         std::unordered_map<int, std::vector<Entity>> ownedEntities;
-        auto& neutralEntities = basicMapStats.at("Available Resources");
-        neutralEntities = 0;
+        auto& availableEntities = basicMapStats.at("Available Resources");
+        availableEntities = 0;
+        neutralEntityPositions.clear();
         for (auto& entity : entities)
         {
             if (!entity.isNeutral() && !ownedEntities.contains(entity.ownerID))
@@ -347,10 +569,12 @@ namespace SGA
             }
             else
             {
-                neutralEntities++;
+                neutralEntityPositions.push_back(entity.position);
+                availableEntities++;
             }
         }
         this->playerOwnedEntities = ownedEntities;
+//        basicMapStats.at("Available Resources") = neutralEntities.size();
     }
 
     void MapState::calcEntityAllocationFairness()
@@ -403,28 +627,48 @@ namespace SGA
         }
 
         float entityFairness = maxNum / totalNum;
-        std::cout << entityFairness;
     }
 
-    std::unordered_map<std::string,std::vector<SGA::Vector2i>> MapState::floodFillMetricHelper(double startX, double startY)
+    std::unordered_map<std::string,std::vector<SGA::Vector2i>> MapState::floodFillMetricHelper(Vector2f& startPosition, Vector2f& endPosition)
     {
         std::unordered_map<std::string,std::vector<SGA::Vector2i>> fillResults;
         std::vector<SGA::Vector2i> reachableTiles;
         std::vector<SGA::Vector2i> reachableEntities;
-        floodFillMetricHelperUtil(startX, startY, reachableTiles, reachableEntities);
+        int fillSize;
 
+        if(endPosition.x == -1)
+            fillSize = std::max(board.getWidth(), board.getHeight());
+        else
+        {
+            auto aStar = AStar(board);
+            aStar.aStarSearch(Vector2i(startPosition.x, startPosition.y), Vector2i(endPosition.x, endPosition.y));
+            fillSize = aStar.pathLength;
+        }
+
+        endMaxX = startPosition.x + fillSize + 1;
+        endMaxY = startPosition.y + fillSize + 1;
+        endMinX = startPosition.x - fillSize - 1;
+        endMinY = startPosition.y - fillSize - 1;
+        floodFillMetricHelperUtil(startPosition, endPosition, fillSize, reachableTiles, reachableEntities);
         fillResults.insert({{"reachableTiles", reachableTiles}, {"reachableEntities", reachableEntities}});
         return fillResults;
     }
 
-    void MapState::floodFillMetricHelperUtil(double x, double y, std::vector<SGA::Vector2i>& visited, std::vector<SGA::Vector2i>& visitedEntities)
+    void MapState::floodFillMetricHelperUtil(Vector2f startPosition, Vector2f& endPosition, int& fillSize, std::vector<SGA::Vector2i>& visited, std::vector<SGA::Vector2i>& visitedEntities)
     {
         // base cases
-        auto pos = Vector2i((int)x, (int)y);
-        if (!board.isInBounds((int)x, (int)y))
+        auto& x = startPosition.x;
+        auto& y = startPosition.y;
+        auto pos = Vector2i(x, y);
+
+        if (!board.isInBounds(x, y))
             return;
-        if(!board.get((int)x,(int)y).isWalkable)
+        if (!board.get(x, y).isWalkable)
             return;
+        if (startPosition == endPosition || x == endMaxX || x == endMinX || y == endMaxY || y == endMinY)
+        {
+            return;
+        }
         for (auto& vec : visited)
         {
             if(vec == pos)
@@ -432,20 +676,23 @@ namespace SGA
         }
 
         // entity check
-        if (getEntityAt(Vector2f((int)x, (int)y)))
+        if (getEntityAt(Vector2f(x, y)))
         {
             visitedEntities.push_back(pos);
         }
         visited.push_back(pos);
 
-        floodFillMetricHelperUtil(x+1, y, visited, visitedEntities);
-        floodFillMetricHelperUtil(x-1, y, visited, visitedEntities);
-        floodFillMetricHelperUtil(x, y+1, visited, visitedEntities);
-        floodFillMetricHelperUtil(x, y-1, visited, visitedEntities);
+        // 4 directions
+        floodFillMetricHelperUtil(Vector2f(x+1, y), endPosition, fillSize, visited, visitedEntities);
+        floodFillMetricHelperUtil(Vector2f(x-1, y), endPosition, fillSize, visited, visitedEntities);
+        floodFillMetricHelperUtil(Vector2f(x, y+1), endPosition, fillSize, visited, visitedEntities);
+        floodFillMetricHelperUtil(Vector2f(x, y-1), endPosition, fillSize, visited, visitedEntities);
+
+        // 8 directions
+        floodFillMetricHelperUtil(Vector2f(x+1, y-1), endPosition, fillSize, visited, visitedEntities);
+        floodFillMetricHelperUtil(Vector2f(x-1, y-1), endPosition, fillSize, visited, visitedEntities);
+        floodFillMetricHelperUtil(Vector2f(x+1, y+1), endPosition, fillSize, visited, visitedEntities);
+        floodFillMetricHelperUtil(Vector2f(x-1, y+1), endPosition, fillSize, visited, visitedEntities);
     }
 
-    void MapState::aStarMetricHelper()
-    {
-
-    }
 }

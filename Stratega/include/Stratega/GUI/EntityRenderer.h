@@ -8,6 +8,7 @@ namespace SGA
 	struct GameConfig;
 	struct RenderConfig;
 	struct GameState;
+	struct Entity;
 	
 	class EntityRenderer : public sf::Drawable, public sf::Transformable
 	{

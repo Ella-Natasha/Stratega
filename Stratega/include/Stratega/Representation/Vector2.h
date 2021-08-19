@@ -22,6 +22,12 @@ namespace SGA
 
 		int x;
 		int y;
+
+        // compare for order. Allows addition of str
+        bool operator <(const Vector2i& pt) const
+        {
+            return (x < pt.x) || ((!(pt.x < x)) && (y < pt.y));
+        }
 	};
 	
 	inline Vector2i::Vector2i()

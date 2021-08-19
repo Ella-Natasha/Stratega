@@ -9,9 +9,7 @@ namespace SGA
     MapEntityRenderer::MapEntityRenderer()
             : atlas(2)
     {
-
     }
-
 
     void MapEntityRenderer::init(const GameConfig& gameConfig, const RenderConfig& renderConfig)
     {
@@ -22,6 +20,7 @@ namespace SGA
             filePaths.emplace_back(namePathPair.second);
             entitySpritePaths.emplace(gameConfig.getEntityID(namePathPair.first), namePathPair.second);
         }
+
         atlas.init(filePaths);
 
         // Initialise vertex array

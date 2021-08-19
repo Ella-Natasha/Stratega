@@ -62,6 +62,7 @@ namespace SGA
 					throw std::runtime_error("Textures added to the atlas need to have the same size");
 				}
 
+
 				// Insert the image into the atlas
 				auto startX = currentPosition.x * (spriteSize.x + pixelGap);
 				auto startY = currentPosition.y * (spriteSize.y + pixelGap);

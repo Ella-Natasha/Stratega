@@ -43,8 +43,8 @@ namespace SGA
 			assetCache.loadTexture(namePathPair.first, namePathPair.second);
 		}
 
-		assetCache.loadTexture("selected", "./GUI/Assets/Tiles/selected.png");
-		assetCache.loadFont("font", "./GUI/Assets/arial.ttf");
+		assetCache.loadTexture("selected", "Assets/Tiles/selected.png");
+		assetCache.loadFont("font", "Assets/arial.ttf");
 
 		tileMap.init(initialState, gameConfig, *gameConfig.renderConfig);
 		entityRenderer.init(initialState, gameConfig, *gameConfig.renderConfig);
